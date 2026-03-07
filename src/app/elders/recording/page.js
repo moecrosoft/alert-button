@@ -26,10 +26,13 @@ export default function RecordingPage() {
 
   const streamRef = useRef(null);
   const videoStreamRef = useRef(null);
+
   const audioRecorderRef = useRef(null);
   const videoRecorderRef = useRef(null);
+
   const audioChunksRef = useRef([]);
   const videoChunksRef = useRef([]);
+  
   const recordingStartRef = useRef(null);
   const analyserRef = useRef(null);
   const animationRef = useRef(null);
@@ -397,13 +400,15 @@ export default function RecordingPage() {
               </p>
             </div>
             {summaryText && (
-              <div className="w-full max-w-lg rounded-lg border border-[#3A3A3A] bg-[#111111] px-4 py-3 text-left">
-                <p className="mb-2 font-['Barlow'] text-sm font-semibold text-[#F5C400]">
+              <div className="w-full max-w-lg flex flex-col rounded-lg border border-[#3A3A3A] bg-[#111111] px-4 py-3 text-left max-h-[50vh] min-h-[120px] overflow-hidden">
+                <p className="mb-2 font-['Barlow'] text-sm font-semibold text-[#F5C400] flex-shrink-0">
                   Recording summary
                 </p>
-                <p className="font-['Barlow'] text-[15px] leading-relaxed text-[#CCCCCC] whitespace-pre-wrap">
-                  {summaryText}
-                </p>
+                <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
+                  <p className="font-['Barlow'] text-[15px] leading-relaxed text-[#CCCCCC] whitespace-pre-wrap break-words pr-1">
+                    {summaryText}
+                  </p>
+                </div>
               </div>
             )}
           </div>
