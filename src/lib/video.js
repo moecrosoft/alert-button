@@ -5,10 +5,18 @@ function getOpenAI() {
 }
 
 export async function analyseVideo({ video }) {
-    const openai = getOpenAI();
+  if (!video || typeof video.arrayBuffer !== "function") {
+    return JSON.stringify({
+      classification: "uncertain",
+      confidence: "low",
+      reason: "No video provided",
+    });
+  }
 
+  try {
+    const openai = getOpenAI();
     const buffer = Buffer.from(await video.arrayBuffer());
-    const base64Video = buffer.toString('base64');
+    const base64Video = buffer.toString("base64");
 
     const prompt = `
 You are an AI emergency monitoring system analysing a short security camera recording.
@@ -70,5 +78,13 @@ Return STRICT JSON:
         ]
     });
 
-    return response.output_text;
+    return response.output_text ?? "";
+  } catch (err) {
+    console.error("Video analysis error:", err);
+    return JSON.stringify({
+      classification: "uncertain",
+      confidence: "low",
+      reason: "Video analysis unavailable",
+    });
+  }
 }

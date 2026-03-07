@@ -209,10 +209,12 @@ export default function RecordingPage() {
       if (videoBlob) {
         const videoForm = new FormData();
         videoForm.append("video", videoBlob, "video.webm");
-        const videoRes = await fetch("/api/video", { method: "POST", body: videoForm });
-        if (videoRes.ok) {
-          const data = await videoRes.json();
+        try {
+          const videoRes = await fetch("/api/video", { method: "POST", body: videoForm });
+          const data = await videoRes.json().catch(() => ({}));
           analysis = typeof data.analysis === "string" ? data.analysis : JSON.stringify(data.analysis ?? "");
+        } catch (e) {
+          console.error("Video API error:", e);
         }
       }
 
@@ -382,7 +384,7 @@ export default function RecordingPage() {
         <section className="mt-6" aria-label="Supported languages">
           <p className="mb-2 font-['Barlow'] text-base text-[#888888]">We support:</p>
           <div className="flex flex-wrap gap-2">
-            {["English", "Mandarin"].map((lang) => (
+            {["English", "Mandarin", "Tamil", "Malay", "Japanese", "Korean"].map((lang) => (
               <span
                 key={lang}
                 className="rounded-full border border-[#3A3A3A] bg-[#2A2A2A] px-3 py-1.5 font-['Barlow'] text-[#CCCCCC]"

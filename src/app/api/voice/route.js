@@ -4,8 +4,17 @@ import { analyseAudio } from '@/lib/voice';
 
 export async function POST(req) {
     try {
+        if (!process.env.OPENAI_API_KEY?.trim()) {
+            console.warn("OPENAI_API_KEY is missing or empty. Using .env.local in the same folder as package.json. Restart the dev server after adding it.");
+            return NextResponse.json({
+                transcript: "",
+                classification: "uncertain",
+                reason: "Voice analysis unavailable (OPENAI_API_KEY not set)",
+            });
+        }
+
         const formData = await req.formData();
-        const audioFile = formData.get('audio'); // Matches your Voice.js append('file', ...)
+        const audioFile = formData.get('audio');
 
         if (!audioFile) {
             return NextResponse.json(
