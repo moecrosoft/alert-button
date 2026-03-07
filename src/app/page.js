@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 export default function Home() {
   const router = useRouter();
   return (
-    <div className="min-h-screen bg-[#1A1A1A] pb-24 text-[#FFFFFF]">
+    <div className="min-h-screen bg-[#1A1A1A] text-[#FFFFFF]">
       <main className="mx-auto flex max-w-md flex-col px-6 pt-8">
         {/* Header — Barlow Condensed + Barlow, dark theme */}
         <header className="mb-8 text-center">
@@ -95,17 +95,6 @@ export default function Home() {
             </li>
           </ol>
         </section>
-
-        {/* Bottom CTA — accent yellow to match recording page */}
-        <div className="fixed bottom-0 left-0 right-0 flex flex-col items-center bg-gradient-to-t from-[#1A1A1A] via-[#1A1A1A]/95 to-transparent pt-12 pb-6">
-          <button
-            type="button"
-            className="min-h-[56px] min-w-[220px] rounded-full bg-[#F5C400] px-8 font-['Barlow'] text-lg font-bold text-black shadow-[0_4px_16px_rgba(0,0,0,0.3)] transition-transform active:scale-[0.98] focus:outline-none focus-visible:ring-4 focus-visible:ring-[#F5C400] focus-visible:ring-offset-2 focus-visible:ring-offset-[#1A1A1A]"
-            aria-label="Get help now"
-          >
-            Get help now
-          </button>
-        </div>
       </main>
     </div>
   );

@@ -4,17 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Mic, VideoOff, Video, Check, Loader2 } from "lucide-react";
 
 const BAR_COUNT = 28;
-
-function useElapsedTimer(running) {
-  const [elapsed, setElapsed] = useState(0);
-  useEffect(() => {
-    if (!running) return;
-    const start = Date.now();
-    const id = setInterval(() => setElapsed(Math.floor((Date.now() - start) / 1000)), 1000);
-    return () => clearInterval(id);
-  }, [running]);
-  return elapsed;
-}
+const MAX_RECORDING_SECONDS = 10;
 
 function formatTime(seconds) {
   const m = Math.floor(seconds / 60);
@@ -28,17 +18,29 @@ export default function RecordingPage() {
   const [cameraOn, setCameraOn] = useState(false);
   const [sending, setSending] = useState(false);
   const [sent, setSent] = useState(false);
-  const [waveTick, setWaveTick] = useState(0);
+  const [summaryText, setSummaryText] = useState("");
+  const [recordingElapsed, setRecordingElapsed] = useState(0);
+  const [barHeights, setBarHeights] = useState(Array(BAR_COUNT).fill(20));
+  const [streamReady, setStreamReady] = useState(false);
+
   const streamRef = useRef(null);
   const videoStreamRef = useRef(null);
-
-  const elapsed = useElapsedTimer(mounted);
+  const audioRecorderRef = useRef(null);
+  const videoRecorderRef = useRef(null);
+  const audioChunksRef = useRef([]);
+  const videoChunksRef = useRef([]);
+  const recordingStartRef = useRef(null);
+  const analyserRef = useRef(null);
+  const animationRef = useRef(null);
+    const isRecording = mounted && recordingStartRef.current !== null;
+  const hasHitMax = recordingElapsed >= MAX_RECORDING_SECONDS;
 
   useEffect(() => {
     setMounted(true);
+    recordingStartRef.current = Date.now();
   }, []);
 
-  // Mic on mount (client-only)
+  // Mic on mount + real-time waveform from AnalyserNode
   useEffect(() => {
     if (!mounted) return;
     let stream = null;
@@ -47,24 +49,92 @@ export default function RecordingPage() {
       .then((s) => {
         stream = s;
         streamRef.current = s;
+        setStreamReady(true);
+
+        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        const source = audioContext.createMediaStreamSource(s);
+        const analyser = audioContext.createAnalyser();
+        analyser.fftSize = 64;
+        analyser.smoothingTimeConstant = 0.8;
+        source.connect(analyser);
+        analyserRef.current = analyser;
+
+        const dataArray = new Uint8Array(analyser.frequencyBinCount);
+
+        const updateBars = () => {
+          if (!analyserRef.current) return;
+          analyserRef.current.getByteFrequencyData(dataArray);
+          const step = Math.floor(dataArray.length / BAR_COUNT);
+          const heights = Array.from({ length: BAR_COUNT }, (_, i) => {
+            const v = dataArray[Math.min(i * step, dataArray.length - 1)] ?? 0;
+            return Math.max(8, 12 + (v / 255) * 50);
+          });
+          setBarHeights(heights);
+          animationRef.current = requestAnimationFrame(updateBars);
+        };
+        updateBars();
       })
       .catch(() => {});
     return () => {
+      if (animationRef.current) cancelAnimationFrame(animationRef.current);
       if (stream) stream.getTracks().forEach((t) => t.stop());
+      setStreamReady(false);
     };
   }, [mounted]);
 
-  // Waveform animation (client-only, avoids hydration mismatch)
+  // Start audio recording when mic stream is ready (once)
   useEffect(() => {
-    if (!mounted) return;
-    let raf = 0;
-    const tick = () => {
-      setWaveTick((t) => t + 1);
-      raf = requestAnimationFrame(tick);
+    if (!streamReady || !streamRef.current || recordingStartRef.current !== null) return;
+
+    audioChunksRef.current = [];
+    recordingStartRef.current = Date.now();
+    setRecordingElapsed(0);
+
+    const audioRecorder = new MediaRecorder(streamRef.current, {
+      mimeType: "audio/webm;codecs=opus",
+    });
+    audioRecorder.ondataavailable = (e) => e.data.size > 0 && audioChunksRef.current.push(e.data);
+    audioRecorder.start(500);
+    audioRecorderRef.current = audioRecorder;
+
+    return () => {
+      if (audioRecorderRef.current?.state === "recording") audioRecorderRef.current.stop();
     };
-    raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
-  }, [mounted]);
+  }, [streamReady]);
+
+  // Start/stop video recorder when camera is toggled
+  useEffect(() => {
+    if (!cameraOn || !videoStreamRef.current || !streamRef.current) {
+      if (videoRecorderRef.current?.state === "recording") videoRecorderRef.current.stop();
+      videoRecorderRef.current = null;
+      return;
+    }
+
+    videoChunksRef.current = [];
+    const combined = new MediaStream([
+      ...streamRef.current.getAudioTracks(),
+      ...videoStreamRef.current.getVideoTracks(),
+    ]);
+    const videoRecorder = new MediaRecorder(combined, { mimeType: "video/webm;codecs=vp9,opus" });
+    videoRecorder.ondataavailable = (e) => e.data.size > 0 && videoChunksRef.current.push(e.data);
+    videoRecorder.start(500);
+    videoRecorderRef.current = videoRecorder;
+
+    return () => {
+      if (videoRecorderRef.current?.state === "recording") videoRecorderRef.current.stop();
+      videoRecorderRef.current = null;
+    };
+  }, [cameraOn]);
+
+  // Recording elapsed timer (0..10s) and auto-complete at 10s
+  useEffect(() => {
+    if (!isRecording) return;
+    const id = setInterval(() => {
+      const elapsed = Math.floor((Date.now() - recordingStartRef.current) / 1000);
+      setRecordingElapsed(Math.min(elapsed, MAX_RECORDING_SECONDS));
+    }, 200);
+    return () => clearInterval(id);
+  }, [isRecording]);
 
   const toggleCamera = useCallback(() => {
     if (cameraOn && videoStreamRef.current) {
@@ -84,13 +154,91 @@ export default function RecordingPage() {
       .catch(() => {});
   }, [cameraOn]);
 
-  const handleSend = useCallback(() => {
+  const stopRecordersAndSend = useCallback(async () => {
+    if (sending) return;
+
+    const audioRecorder = audioRecorderRef.current;
+    const videoRecorder = videoRecorderRef.current;
+
+    const waitForStop = (recorder) =>
+      new Promise((resolve) => {
+        if (!recorder || recorder.state !== "recording") {
+          resolve();
+          return;
+        }
+        recorder.onstop = resolve;
+        recorder.stop();
+      });
+
+    await Promise.all([waitForStop(audioRecorder), waitForStop(videoRecorder)]);
+
+    recordingStartRef.current = null;
     setSending(true);
-    setTimeout(() => {
+
+    let transcript = "";
+    let analysis = "";
+
+    const audioBlob =
+      audioChunksRef.current.length > 0
+        ? new Blob(audioChunksRef.current, { type: "audio/webm" })
+        : null;
+    const videoBlob =
+      videoChunksRef.current.length > 0
+        ? new Blob(videoChunksRef.current, { type: "video/webm" })
+        : null;
+
+    try {
+      if (audioBlob) {
+        const voiceForm = new FormData();
+        voiceForm.append("audio", audioBlob);
+        const voiceRes = await fetch("/api/voice", { method: "POST", body: voiceForm });
+        if (voiceRes.ok) {
+          const data = await voiceRes.json();
+          transcript = data.transcript || "";
+        }
+      }
+
+      if (videoBlob) {
+        const videoForm = new FormData();
+        videoForm.append("video", videoBlob);
+        const videoRes = await fetch("/api/video", { method: "POST", body: videoForm });
+        if (videoRes.ok) {
+          const data = await videoRes.json();
+          analysis = typeof data.analysis === "string" ? data.analysis : JSON.stringify(data.analysis ?? "");
+        }
+      }
+
+      const textRes = await fetch("/api/text", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ answer: analysis, voiceTranscript: transcript }),
+      });
+
+      if (textRes.ok) {
+        const textData = await textRes.json();
+        setSummaryText(textData.summary ?? [transcript, analysis].filter(Boolean).join("\n\n"));
+      } else {
+        setSummaryText([transcript, analysis].filter(Boolean).join("\n\n") || "Recording completed.");
+      }
+    } catch (err) {
+      console.error(err);
+      setSummaryText("Recording completed. Summary unavailable.");
+    } finally {
       setSending(false);
       setSent(true);
-    }, 2000);
-  }, []);
+    }
+  }, [sending]);
+
+  // Auto-complete when we hit 10 seconds
+  useEffect(() => {
+    if (!hasHitMax || sending || sent) return;
+    stopRecordersAndSend();
+  }, [hasHitMax, sending, sent, stopRecordersAndSend]);
+
+  const handleSend = useCallback(() => {
+    if (hasHitMax) return;
+    stopRecordersAndSend();
+  }, [hasHitMax, stopRecordersAndSend]);
 
   useEffect(() => {
     return () => {
@@ -99,14 +247,8 @@ export default function RecordingPage() {
     };
   }, []);
 
-  const barHeights = Array.from({ length: BAR_COUNT }, (_, i) => {
-    const t = waveTick * 0.05 + i * 0.4;
-    return 20 + Math.sin(t) * 35;
-  });
-
   return (
     <div className="min-h-screen bg-[#1A1A1A] text-[#FFFFFF]">
-      {/* 1. Status bar */}
       <header className="flex w-full items-center justify-between border-b border-[#9D4F15] bg-[#111111] px-4 py-3">
         <div className="flex items-center gap-2">
           <span
@@ -118,12 +260,11 @@ export default function RecordingPage() {
           </span>
         </div>
         <span className="font-['Barlow_Condensed'] text-xl tabular-nums text-[#FFFFFF]">
-          {formatTime(elapsed)}
+          {formatTime(recordingElapsed)} / {formatTime(MAX_RECORDING_SECONDS)}
         </span>
       </header>
 
       <main className="mx-auto max-w-lg px-4 pb-8 pt-4">
-        {/* 2. Camera section — video always in DOM so ref is set when we attach stream */}
         <section
           className="relative aspect-video w-full overflow-hidden rounded-lg bg-black"
           aria-label="Camera"
@@ -144,7 +285,6 @@ export default function RecordingPage() {
           )}
         </section>
 
-        {/* 3. Mic + waveform */}
         <section
           className="mt-4 overflow-hidden rounded-lg bg-gradient-to-b from-[#2A2A6A] to-[#1A1A2A] px-6 py-6"
           aria-label="Microphone and waveform"
@@ -167,23 +307,22 @@ export default function RecordingPage() {
           </div>
         </section>
 
-        {/* 4. Text content */}
         <section className="mt-6">
           <h1 className="font-['Barlow_Condensed'] text-[32px] font-semibold leading-tight text-[#FFFFFF]">
             Please describe your situation
           </h1>
           <p className="mt-2 font-['Barlow'] text-lg leading-relaxed text-[#CCCCCC]">
-            Speak clearly in your preferred language. You can also turn on your camera to show your
-            surroundings.
+            Speak clearly in your preferred language (max {MAX_RECORDING_SECONDS} seconds). You can
+            also turn on your camera to show your surroundings.
           </p>
         </section>
 
-        {/* 5. Two buttons */}
         <section className="mt-6 flex flex-col gap-3 sm:flex-row sm:gap-4">
           <button
             type="button"
             onClick={toggleCamera}
-            className={`flex min-h-[64px] min-w-[56px] flex-1 items-center justify-center gap-3 rounded-lg border bg-[#2A2A2A] font-['Barlow'] text-lg text-white transition-colors ${
+            disabled={sending || hasHitMax}
+            className={`flex min-h-[64px] min-w-[56px] flex-1 items-center justify-center gap-3 rounded-lg border bg-[#2A2A2A] font-['Barlow'] text-lg text-white transition-colors disabled:opacity-50 ${
               cameraOn ? "border-[#F5C400] text-[#F5C400]" : "border-[#444444]"
             }`}
             aria-label={cameraOn ? "Turn off camera" : "Turn on camera"}
@@ -194,7 +333,7 @@ export default function RecordingPage() {
           <button
             type="button"
             onClick={handleSend}
-            disabled={sending}
+            disabled={sending || hasHitMax}
             className="flex min-h-[64px] min-w-[56px] flex-1 items-center justify-center gap-3 rounded-lg bg-[#F5C400] font-['Barlow'] text-lg font-bold text-black transition-opacity disabled:opacity-90"
             aria-label="Complete and send alert"
           >
@@ -203,13 +342,14 @@ export default function RecordingPage() {
                 <Loader2 className="h-7 w-7 flex-shrink-0 animate-spin" aria-hidden />
                 <span>Sending...</span>
               </>
+            ) : hasHitMax ? (
+              <span>Completing...</span>
             ) : (
               <span>Complete & Send Alert</span>
             )}
           </button>
         </section>
 
-        {/* 6. Language chips */}
         <section className="mt-6" aria-label="Supported languages">
           <p className="mb-2 font-['Barlow'] text-base text-[#888888]">We support:</p>
           <div className="flex flex-wrap gap-2">
@@ -224,7 +364,6 @@ export default function RecordingPage() {
           </div>
         </section>
 
-        {/* 7. Safety note */}
         <section className="mt-6 rounded-r-lg border-l-4 border-[#9D4F15] bg-[#111111] px-4 py-3">
           <p className="font-['Barlow'] text-[17px] leading-relaxed text-[#CCCCCC]">
             Your safety is our priority. An emergency operator will contact you through your PAB
@@ -233,7 +372,6 @@ export default function RecordingPage() {
         </section>
       </main>
 
-      {/* 8. Success overlay */}
       {sent && (
         <div
           className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-[#1A1A1A]/95 px-6"
@@ -241,7 +379,7 @@ export default function RecordingPage() {
           aria-modal="true"
           aria-labelledby="success-title"
         >
-          <div className="flex flex-col items-center gap-6">
+          <div className="flex max-h-[90vh] flex-col items-center gap-6 overflow-auto">
             <div className="flex h-24 w-24 flex-shrink-0 items-center justify-center rounded-full bg-[#F5C400]">
               <Check className="h-14 w-14 text-black" strokeWidth={3} aria-hidden />
             </div>
@@ -256,6 +394,16 @@ export default function RecordingPage() {
                 An operator will contact you shortly.
               </p>
             </div>
+            {summaryText && (
+              <div className="w-full max-w-lg rounded-lg border border-[#3A3A3A] bg-[#111111] px-4 py-3 text-left">
+                <p className="mb-2 font-['Barlow'] text-sm font-semibold text-[#F5C400]">
+                  Recording summary
+                </p>
+                <p className="font-['Barlow'] text-[15px] leading-relaxed text-[#CCCCCC] whitespace-pre-wrap">
+                  {summaryText}
+                </p>
+              </div>
+            )}
           </div>
         </div>
       )}

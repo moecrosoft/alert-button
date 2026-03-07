@@ -66,3 +66,37 @@ export async function classifyUrgency(userTextPromise = "", imageDescPromise = "
 
   return response.output_text.trim();
 }
+
+export async function POST(req) {
+  try {
+    const body = await req.json();
+    const { answer = "", voiceTranscript = "" } = body;
+
+    const classification = await classifyUrgency(
+      Promise.resolve(voiceTranscript),
+      Promise.resolve(answer)
+    );
+
+    let videoSummary = "";
+    if (answer) {
+      try {
+        const parsed = typeof answer === "string" ? JSON.parse(answer) : answer;
+        videoSummary = parsed.reason
+          ? `Video: ${parsed.reason}${parsed.classification ? ` (${parsed.classification})` : ""}`
+          : `Video: ${answer}`;
+      } catch {
+        videoSummary = `Video: ${answer}`;
+      }
+    }
+    const voiceSummary = voiceTranscript ? `Voice: ${voiceTranscript}` : "";
+    const summary = [voiceSummary, videoSummary].filter(Boolean).join("\n\n") || "No recording summary.";
+
+    return NextResponse.json({ classification, summary });
+  } catch (error) {
+    console.error("Text API error:", error);
+    return NextResponse.json(
+      { error: "Classification failed" },
+      { status: 500 }
+    );
+  }
+}

@@ -13,21 +13,8 @@ export async function POST(req) {
             )
         }
 
-        const answer = await analyseVideo({
-            video
-        });
-
-        const response = await fetch('/api/text', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({ answer })
-        })
-
-        const result = await response.json();
-
-        return NextResponse.json(result);
+        const analysis = await analyseVideo({ video });
+        return NextResponse.json({ analysis });
         
     } catch (error) {
         console.error(error);
