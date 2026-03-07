@@ -19,15 +19,15 @@ You are an AI emergency monitoring system analysing a transcript from a security
 Carefully analyse the text and determine the situation.
 
 Classify into ONE category:
-urgent (Immediate danger, violence, fire, medical distress)
-non-urgent (Arguments, suspicious behavior, loitering)
-false alarm (Normal conversation, everyday activity)
+urgent (Immediate danger, violence, fire, medical distress, [screaming], or [crying])
+non-urgent (Arguments, suspicious behavior, loitering, or [whispering])
+uncertain (Normal conversation, everyday activity, [laughter], [singing], or [joyful shouting])
 
 Return STRICT JSON:
 {
   "classification": "urgent | non-urgent | false alarm",
   "confidence": "low | medium | high",
-  "reason": "short explanation",
+  "reason": "short explanation focusing on the emotional tone detected",
   "transcript": "${transcript}"
 }
 `;
