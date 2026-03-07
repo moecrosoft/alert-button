@@ -27,9 +27,14 @@ import {
 export default function ReportsPage() {
   const router = useRouter();
   const { t, theme, mounted } = useSettings();
-  const { reports, loading: reportsLoading, updateReport, deleteReport } = useReports();
+  const { reports, loading: reportsLoading, fetchReports, updateReport, deleteReport } = useReports();
   const { user, isAdmin, loading: authLoading, signOut } = useAuth();
-  
+
+  // Load reports whenever the reports page is reached (direct URL or navigation)
+  useEffect(() => {
+    fetchReports();
+  }, [fetchReports]);
+
   const [filter, setFilter] = useState("all");
   const [editingReport, setEditingReport] = useState(null);
   const [editForm, setEditForm] = useState({});
@@ -87,19 +92,23 @@ export default function ReportsPage() {
     return null;
   }
 
+  // Normalize classification for display (API may have saved "Not Urgent" historically)
+  const norm = (c) => (c === "Not Urgent" ? "Non-Urgent" : c);
+
   // Filter reports
   const filteredReports = reports.filter((report) => {
+    const classification = norm(report.classification);
     if (filter === "all") return true;
-    if (filter === "urgent") return report.classification === "Urgent";
-    if (filter === "non-urgent") return report.classification === "Non-Urgent";
-    if (filter === "false-alarm") return report.classification === "False Alarm";
+    if (filter === "urgent") return classification === "Urgent";
+    if (filter === "non-urgent") return classification === "Non-Urgent";
+    if (filter === "false-alarm") return classification === "False Alarm";
     return true;
   });
 
   // Stats
   const stats = {
     total: reports.length,
-    urgent: reports.filter((r) => r.classification === "Urgent").length,
+    urgent: reports.filter((r) => norm(r.classification) === "Urgent").length,
     resolved: reports.filter((r) => r.status === "Resolved" || r.status === "Closed").length,
   };
 
@@ -118,9 +127,10 @@ export default function ReportsPage() {
     return date.toLocaleDateString();
   };
 
-  // Style helpers
+  // Style helpers (accept both "Non-Urgent" and "Not Urgent" for display)
   const getClassificationStyle = (classification) => {
-    switch (classification) {
+    const c = norm(classification);
+    switch (c) {
       case "Urgent":
         return { bg: "rgba(192, 57, 43, 0.15)", color: "#E74C3C", border: "rgba(192, 57, 43, 0.3)" };
       case "Non-Urgent":
@@ -156,7 +166,7 @@ export default function ReportsPage() {
     setEditingReport(report.id);
     setEditForm({
       title: report.title,
-      classification: report.classification,
+      classification: norm(report.classification),
       status: report.status,
       summary: report.summary,
     });
@@ -356,6 +366,7 @@ export default function ReportsPage() {
                 <tbody>
                   {filteredReports.map((report, index) => {
                     const classStyle = getClassificationStyle(report.classification);
+                    const displayClassification = norm(report.classification);
                     const statusStyle = getStatusStyle(report.status);
                     const isEditing = editingReport === report.id;
 
@@ -416,8 +427,8 @@ export default function ReportsPage() {
                               className="inline-flex items-center px-3 py-1 rounded-full font-['Barlow'] text-xs font-semibold"
                               style={{ backgroundColor: classStyle.bg, color: classStyle.color, borderWidth: "1px", borderColor: classStyle.border }}
                             >
-                              {report.classification === "Urgent" && <AlertTriangle className="h-3 w-3 mr-1" />}
-                              {report.classification}
+                              {displayClassification === "Urgent" && <AlertTriangle className="h-3 w-3 mr-1" />}
+                              {displayClassification}
                             </span>
                           )}
                         </td>
@@ -551,8 +562,8 @@ export default function ReportsPage() {
                       borderColor: getClassificationStyle(selectedReport.classification).border,
                     }}
                   >
-                    {selectedReport.classification === "Urgent" && <AlertTriangle className="h-3 w-3 mr-1" />}
-                    {selectedReport.classification}
+                    {norm(selectedReport.classification) === "Urgent" && <AlertTriangle className="h-3 w-3 mr-1" />}
+                    {norm(selectedReport.classification)}
                   </span>
                   <span
                     className="inline-flex items-center px-3 py-1 rounded-full font-['Barlow'] text-xs font-medium"

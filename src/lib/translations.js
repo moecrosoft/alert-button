@@ -30,6 +30,7 @@ export const translations = {
     // Alert sent
     alertSent: "Alert Sent",
     operatorContact: "An operator will contact you shortly.",
+    backToButton: "Back to button",
     status: "Status",
     noClassification: "No classification found",
     analysisSummary: "Analysis & summary",
@@ -122,6 +123,7 @@ export const translations = {
     // Alert sent
     alertSent: "警报已发送",
     operatorContact: "工作人员将很快联系您。",
+    backToButton: "返回按钮",
     status: "状态",
     noClassification: "未找到分类",
     analysisSummary: "分析与摘要",
@@ -214,6 +216,7 @@ export const translations = {
     // Alert sent
     alertSent: "Amaran Dihantar",
     operatorContact: "Operator akan menghubungi anda tidak lama lagi.",
+    backToButton: "Kembali ke butang",
     status: "Status",
     noClassification: "Tiada klasifikasi ditemui",
     analysisSummary: "Analisis & ringkasan",
@@ -306,6 +309,7 @@ export const translations = {
     // Alert sent
     alertSent: "எச்சரிக்கை அனுப்பப்பட்டது",
     operatorContact: "ஒரு ஆபரேட்டர் விரைவில் உங்களை தொடர்பு கொள்வார்.",
+    backToButton: "பட்டனுக்கு திரும்பு",
     status: "நிலை",
     noClassification: "வகைப்படுத்தல் இல்லை",
     analysisSummary: "பகுப்பாய்வு & சுருக்கம்",

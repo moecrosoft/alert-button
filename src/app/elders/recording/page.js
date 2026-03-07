@@ -1,13 +1,14 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Mic, VideoOff, Video, Check, Loader2, Info } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { Mic, VideoOff, Video, Check, Loader2, Info, ArrowLeft } from "lucide-react";
 import { useSettings } from "@/lib/SettingsContext";
 import { supabase } from "@/lib/supabase";
 
 const BAR_COUNT = 28;
-const MAX_RECORDING_SECONDS = 15;
-const COUNTDOWN_SECONDS = 5;
+const MAX_RECORDING_SECONDS = 10;
+const COUNTDOWN_SECONDS = 3;
 
 function formatTime(seconds) {
   const m = Math.floor(seconds / 60);
@@ -16,8 +17,9 @@ function formatTime(seconds) {
 }
 
 export default function RecordingPage() {
+  const router = useRouter();
   const { t, theme, mounted: settingsMounted } = useSettings();
-  
+
   const videoRef = useRef(null);
   const [mounted, setMounted] = useState(false);
   const [cameraOn, setCameraOn] = useState(false);
@@ -290,6 +292,14 @@ export default function RecordingPage() {
         setSummaryText(finalSummary);
       }
 
+      // Normalize classification for DB: reports page expects "Non-Urgent" and "False Alarm"
+      const dbClassification =
+        finalClassification === "Not Urgent"
+          ? "Non-Urgent"
+          : finalClassification === "Uncertain"
+            ? "False Alarm"
+            : (finalClassification || "Pending");
+
       // Save report to Supabase
       try {
         const { error: saveError } = await supabase.from("reports").insert([
@@ -299,7 +309,7 @@ export default function RecordingPage() {
               : finalClassification === "Not Urgent" 
                 ? "Non-Urgent Alert"
                 : "Emergency Alert",
-            classification: finalClassification || "Pending",
+            classification: dbClassification,
             confidence: "Medium",
             summary: finalSummary,
             status: "Pending",
@@ -725,6 +735,22 @@ export default function RecordingPage() {
                 </div>
               </div>
             )}
+            <button
+              type="button"
+              onClick={() => router.push("/")}
+              className="inline-flex items-center justify-center gap-2 rounded-xl px-6 py-3 font-['Barlow'] text-base font-semibold transition-opacity hover:opacity-90"
+              style={{
+                backgroundColor: colors.buttonBg ?? "#F5C400",
+                color: theme === "light" ? "#1A1A1A" : "#0D0D0D",
+                borderWidth: "1px",
+                borderStyle: "solid",
+                borderColor: colors.cardBorder,
+              }}
+              aria-label={settingsMounted ? t("backToButton") : "Back to button"}
+            >
+              <ArrowLeft className="h-5 w-5" aria-hidden />
+              {settingsMounted ? t("backToButton") : "Back to button"}
+            </button>
           </div>
         </div>
       )}
