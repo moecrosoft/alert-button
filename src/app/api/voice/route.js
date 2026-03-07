@@ -1,38 +1,42 @@
-import { OpenAI } from "openai";
-
-// 1. Initialize OpenAI using the environment variable
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY 
-});
+import { NextResponse } from 'next/server';
+// This line connects your logic to your route
+import { analyseAudio } from '@/lib/voice'; 
 
 export async function POST(req) {
-  try {
-    // 2. Receive the text from your javascriptcam.js
-    const { text } = await req.json();
+    try {
+        const formData = await req.formData();
+        const audioFile = formData.get('audio'); // Matches your Voice.js append('file', ...)
 
-    // 3. Process with GPT-4o
-    const completion = await openai.chat.completions.create({
-      model: "gpt-4o", 
-      messages: [
-        { 
-          role: "system", 
-          content: "You are a professional assistant. Clean up this speech transcript for clarity, grammar, and professional tone." 
-        },
-        { role: "user", content: text }
-      ],
-    });
+        if (!audioFile) {
+            return NextResponse.json(
+                { error: 'No audio uploaded' },
+                { status: 400 }
+            );
+        }
 
-    // 4. Send back the original and the improved version
-    return new Response(JSON.stringify({ 
-      original: text,
-      improved: completion.choices[0].message.content 
-    }), { 
-        status: 200,
-        headers: { 'Content-Type': 'application/json' }
-    });
+        // 1. Call your imported function
+        const answer = await analyseAudio({
+            audioFile
+        });
 
-  } catch (error) {
-    console.error("OpenAI Route Error:", error);
-    return new Response(JSON.stringify({ error: "Failed to connect to OpenAI" }), { status: 500 });
-  }
+        // 2. Forward the JSON string to your /api/text endpoint (Matching Video format)
+        const response = await fetch(`/api/text`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ answer }) // answer is the JSON string from analyseAudio
+        });
+
+        const result = await response.json();
+
+        return NextResponse.json(result);
+        
+    } catch (error) {
+        console.error("Audio Analysis Route Error:", error);
+        return NextResponse.json(
+            { error: 'Audio analysis failed' },
+            { status: 500 }
+        );
+    }
 }
