@@ -19,6 +19,7 @@ export default function RecordingPage() {
   const [sending, setSending] = useState(false);
   const [sent, setSent] = useState(false);
   const [summaryText, setSummaryText] = useState("");
+  const [classification, setClassification] = useState("");
   const [recordingElapsed, setRecordingElapsed] = useState(0);
   const [barHeights, setBarHeights] = useState(Array(BAR_COUNT).fill(20));
   const [streamReady, setStreamReady] = useState(false);
@@ -182,6 +183,7 @@ export default function RecordingPage() {
 
     let transcript = "";
     let analysis = "";
+    let voiceClassification = "";
 
     const audioBlob =
       audioChunksRef.current.length > 0
@@ -200,6 +202,7 @@ export default function RecordingPage() {
         if (voiceRes.ok) {
           const data = await voiceRes.json();
           transcript = data.transcript ?? "";
+          voiceClassification = data.classification ?? "";
         }
       }
 
@@ -221,12 +224,33 @@ export default function RecordingPage() {
 
       if (textRes.ok) {
         const textData = await textRes.json();
+        const textClassification = textData.classification ?? "";
+        setClassification(
+          textClassification ||
+            (voiceClassification
+              ? voiceClassification.toLowerCase() === "urgent"
+                ? "Urgent"
+                : voiceClassification.toLowerCase() === "false alarm"
+                  ? "Uncertain"
+                  : "Not Urgent"
+              : "")
+        );
         setSummaryText(textData.summary ?? [transcript, analysis].filter(Boolean).join("\n\n"));
       } else {
+        setClassification(
+          voiceClassification
+            ? voiceClassification.toLowerCase() === "urgent"
+              ? "Urgent"
+              : voiceClassification.toLowerCase() === "false alarm"
+                ? "Uncertain"
+                : "Not Urgent"
+            : ""
+        );
         setSummaryText([transcript, analysis].filter(Boolean).join("\n\n") || "Recording completed.");
       }
     } catch (err) {
       console.error(err);
+      setClassification("");
       setSummaryText("Recording completed. Summary unavailable.");
     } finally {
       setSending(false);
@@ -398,15 +422,29 @@ export default function RecordingPage() {
               <p className="font-['Barlow'] text-xl text-[#CCCCCC]">
                 An operator will contact you shortly.
               </p>
+              <p
+                className={`font-['Barlow'] text-lg font-bold mt-2 px-4 py-2 rounded-lg ${
+                  !classification || classification.trim() === ""
+                    ? "bg-[#3A3A3A] text-[#888888] border border-[#555555]"
+                    : classification.toLowerCase() === "urgent"
+                      ? "bg-[#C0392B] text-white"
+                      : classification.toLowerCase() === "uncertain"
+                        ? "bg-[#5D5D5D] text-white border border-[#888888]"
+                        : "bg-[#2A2A2A] text-[#F5C400] border border-[#F5C400]"
+                }`}
+                aria-live="polite"
+              >
+                Status: {classification && classification.trim() !== "" ? classification : "No classification found"}
+              </p>
             </div>
-            {summaryText && (
+            {(summaryText || classification) && (
               <div className="w-full max-w-lg flex flex-col rounded-lg border border-[#3A3A3A] bg-[#111111] px-4 py-3 text-left max-h-[50vh] min-h-[120px] overflow-hidden">
-                <p className="mb-2 font-['Barlow'] text-sm font-semibold text-[#F5C400] flex-shrink-0">
-                  Recording summary
+                <p className="mb-2 font-['Barlow'] text-sm font-semibold text-[#F5C400] flex-shrink-0 text-center">
+                  Analysis &amp; summary
                 </p>
                 <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
                   <p className="font-['Barlow'] text-[15px] leading-relaxed text-[#CCCCCC] whitespace-pre-wrap break-words pr-1">
-                    {summaryText}
+                    {summaryText || "No summary available."}
                   </p>
                 </div>
               </div>

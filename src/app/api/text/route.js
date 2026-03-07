@@ -20,12 +20,13 @@ export async function classifyUrgency(userTextPromise = "", imageDescPromise = "
   const client = getOpenAI();
   const response = await client.responses.create({
     model: "gpt-5-mini",
-    input: `You are an expert triage assistant for a service supporting elderly residents living in Singapore HDB flats. Your job is to read a help request and a description of the elderly person asking for help. You must classify the situation strictly as either "Urgent" or "Not Urgent". Do not provide any other text, explanation, or conversation.
+    input: `You are an expert triage assistant for a service supporting elderly residents living in Singapore HDB flats. Your job is to read a help request and a description of the elderly person asking for help. You must classify the situation strictly as one of: "Urgent", "Not Urgent", or "Uncertain". Do not provide any other text, explanation, or conversation.
 
     Rules for Classification:
     Urgent: Situations involving falls, sudden severe pain, suspected strokes/heart attacks, being locked inside without food/medication, strong gas leaks, or power outages affecting essential medical equipment.
     Not Urgent: General maintenance (e.g., blinking lights, dripping taps), pest control, inquiries about community activities, or non-critical loneliness where there is no immediate threat to health or safety.
-    Handling Missing Images: The "image description" will frequently be empty. If it is empty, you must base your decision entirely on the severity of the "voice analysis". If an image description is present, use it to confirm or elevate the physical danger.
+    Uncertain: Use when the request is unclear, ambiguous, too short to judge, in an unfamiliar language, or when you cannot confidently choose Urgent or Not Urgent.
+    Handling Missing Images: The "image description" will frequently be empty. If it is empty, base your decision on the "voice analysis". If an image description is present, use it to confirm or elevate the physical danger.
 
     Examples:
     Input:
@@ -53,10 +54,10 @@ export async function classifyUrgency(userTextPromise = "", imageDescPromise = "
     Not Urgent
 
     Input:
-    voice analysis: Transcript: "Hello, I drop my medicine bottle under the bed. Cannot reach." Tone: Normal, slightly tired. Background: Fan whirring.
-    image description: Elderly male lying on the floor next to a bed, visibly struggling to reach under the frame with a walking stick.
+    voice analysis: [unclear or very short]
+    image description:
     Output:
-    Urgent
+    Uncertain
 
     ### Task:
     voice analysis: ${finalUserText}
@@ -64,8 +65,9 @@ export async function classifyUrgency(userTextPromise = "", imageDescPromise = "
     Label:`,
   });
 
-  // The response is expected to be a string either "Urgent" or "Not Urgent".
-  return response.output_text.trim();
+  const raw = response.output_text.trim();
+  const normalized = /^urgent$/i.test(raw) ? "Urgent" : /^not urgent$/i.test(raw) ? "Not Urgent" : /^uncertain$/i.test(raw) ? "Uncertain" : raw;
+  return normalized;
 }
 
 export async function POST(req) {
