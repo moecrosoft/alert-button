@@ -1,10 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Mic, VideoOff, Video, Check, Loader2 } from "lucide-react";
+import { Mic, VideoOff, Video, Check, Loader2, Info } from "lucide-react";
+import { useSettings } from "@/lib/SettingsContext";
+import { supabase } from "@/lib/supabase";
 
 const BAR_COUNT = 28;
-const MAX_RECORDING_SECONDS = 10;
+const MAX_RECORDING_SECONDS = 15;
+const COUNTDOWN_SECONDS = 5;
 
 function formatTime(seconds) {
   const m = Math.floor(seconds / 60);
@@ -13,6 +16,8 @@ function formatTime(seconds) {
 }
 
 export default function RecordingPage() {
+  const { t, theme, mounted: settingsMounted } = useSettings();
+  
   const videoRef = useRef(null);
   const [mounted, setMounted] = useState(false);
   const [cameraOn, setCameraOn] = useState(false);
@@ -24,6 +29,8 @@ export default function RecordingPage() {
   const [barHeights, setBarHeights] = useState(Array(BAR_COUNT).fill(20));
   const [streamReady, setStreamReady] = useState(false);
   const [recordingStarted, setRecordingStarted] = useState(false);
+  const [countdown, setCountdown] = useState(COUNTDOWN_SECONDS);
+  const [showCountdown, setShowCountdown] = useState(true);
 
   const streamRef = useRef(null);
   const videoStreamRef = useRef(null);
@@ -41,11 +48,40 @@ export default function RecordingPage() {
   const isRecording = recordingStarted && recordingStartRef.current !== null;
   const hasHitMax = recordingElapsed >= MAX_RECORDING_SECONDS;
 
+  // Theme-based colors
+  const colors = {
+    bg: theme === "light" ? "#F8F5F2" : "#1A1A1A",
+    text: theme === "light" ? "#1A1A1A" : "#FFFFFF",
+    textMuted: theme === "light" ? "#666666" : "#CCCCCC",
+    textDim: theme === "light" ? "#999999" : "#888888",
+    cardBg: theme === "light" ? "#FFFFFF" : "#111111",
+    cardBorder: theme === "light" ? "#E5E5E5" : "#3A3A3A",
+    headerBg: theme === "light" ? "#FFFFFF" : "#111111",
+    buttonBg: theme === "light" ? "#F5F5F5" : "#2A2A2A",
+    buttonBorder: theme === "light" ? "#E5E5E5" : "#444444",
+  };
+
   useEffect(() => {
     setMounted(true);
-    recordingStartRef.current = Date.now();
-    setRecordingStarted(true);
   }, []);
+
+  // Countdown timer before recording starts
+  useEffect(() => {
+    if (!mounted || !showCountdown) return;
+    
+    if (countdown <= 0) {
+      setShowCountdown(false);
+      recordingStartRef.current = Date.now();
+      setRecordingStarted(true);
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      setCountdown(c => c - 1);
+    }, 1000);
+
+    return () => clearTimeout(timer);
+  }, [mounted, countdown, showCountdown]);
 
   // Mic on mount + real-time waveform from AnalyserNode
   useEffect(() => {
@@ -224,32 +260,63 @@ export default function RecordingPage() {
         body: JSON.stringify({ answer: analysis, voiceTranscript: transcript }),
       });
 
+      let finalClassification = "";
+      let finalSummary = "";
+
       if (textRes.ok) {
         const textData = await textRes.json();
         const textClassification = textData.classification ?? "";
-        setClassification(
-          textClassification ||
-            (voiceClassification
-              ? voiceClassification.toLowerCase() === "urgent"
-                ? "Urgent"
-                : voiceClassification.toLowerCase() === "false alarm"
-                  ? "Uncertain"
-                  : "Not Urgent"
-              : "")
-        );
-        setSummaryText(textData.summary ?? [transcript, analysis].filter(Boolean).join("\n\n"));
-      } else {
-        setClassification(
-          voiceClassification
+        finalClassification = textClassification ||
+          (voiceClassification
             ? voiceClassification.toLowerCase() === "urgent"
               ? "Urgent"
               : voiceClassification.toLowerCase() === "false alarm"
                 ? "Uncertain"
                 : "Not Urgent"
-            : ""
-        );
-        setSummaryText([transcript, analysis].filter(Boolean).join("\n\n") || "Recording completed.");
+            : "Pending");
+        finalSummary = textData.summary ?? [transcript, analysis].filter(Boolean).join("\n\n");
+        setClassification(finalClassification);
+        setSummaryText(finalSummary);
+      } else {
+        finalClassification = voiceClassification
+          ? voiceClassification.toLowerCase() === "urgent"
+            ? "Urgent"
+            : voiceClassification.toLowerCase() === "false alarm"
+              ? "Uncertain"
+              : "Not Urgent"
+          : "Pending";
+        finalSummary = [transcript, analysis].filter(Boolean).join("\n\n") || "Recording completed.";
+        setClassification(finalClassification);
+        setSummaryText(finalSummary);
       }
+
+      // Save report to Supabase
+      try {
+        const { error: saveError } = await supabase.from("reports").insert([
+          {
+            title: finalClassification === "Urgent" 
+              ? "Urgent Emergency Alert" 
+              : finalClassification === "Not Urgent" 
+                ? "Non-Urgent Alert"
+                : "Emergency Alert",
+            classification: finalClassification || "Pending",
+            confidence: "Medium",
+            summary: finalSummary,
+            status: "Pending",
+            has_video: videoBlob !== null,
+            transcript: transcript,
+            video_analysis: analysis,
+          },
+        ]);
+        if (saveError) {
+          console.error("Failed to save report:", saveError);
+        } else {
+          console.log("Report saved successfully");
+        }
+      } catch (saveErr) {
+        console.error("Error saving report:", saveErr);
+      }
+
     } catch (err) {
       console.error(err);
       setClassification("");
@@ -278,22 +345,159 @@ export default function RecordingPage() {
     };
   }, []);
 
+  // Calculate progress percentage
+  const progressPercent = (recordingElapsed / MAX_RECORDING_SECONDS) * 100;
+  const timeRemaining = MAX_RECORDING_SECONDS - recordingElapsed;
+
   return (
-    <div className="min-h-screen bg-[#1A1A1A] text-[#FFFFFF]">
-      <header className="flex w-full items-center justify-between border-b border-[#9D4F15] bg-[#111111] px-4 py-3">
+    <div
+      className="min-h-screen transition-colors duration-300"
+      style={{ backgroundColor: colors.bg, color: colors.text }}
+    >
+      {/* Countdown Popup */}
+      {showCountdown && (
+        <div
+          className="fixed inset-0 z-[60] flex flex-col items-center justify-center"
+          style={{ backgroundColor: theme === "light" ? "rgba(248,245,242,0.98)" : "rgba(26,26,26,0.98)" }}
+        >
+          <div className="flex flex-col items-center gap-6 text-center px-6">
+            {/* Countdown Circle */}
+            <div className="relative">
+              <svg className="w-40 h-40 transform -rotate-90">
+                <circle
+                  cx="80"
+                  cy="80"
+                  r="70"
+                  stroke={theme === "light" ? "#E5E5E5" : "#3A3A3A"}
+                  strokeWidth="8"
+                  fill="none"
+                />
+                <circle
+                  cx="80"
+                  cy="80"
+                  r="70"
+                  stroke="#F5C400"
+                  strokeWidth="8"
+                  fill="none"
+                  strokeLinecap="round"
+                  strokeDasharray={2 * Math.PI * 70}
+                  strokeDashoffset={2 * Math.PI * 70 * (1 - countdown / COUNTDOWN_SECONDS)}
+                  className="transition-all duration-1000 ease-linear"
+                />
+              </svg>
+              <div className="absolute inset-0 flex items-center justify-center">
+                <span
+                  className="font-['Barlow_Condensed'] text-6xl font-bold"
+                  style={{ color: colors.text }}
+                >
+                  {countdown}
+                </span>
+              </div>
+            </div>
+            
+            <div>
+              <h2
+                className="font-['Barlow_Condensed'] text-2xl font-bold mb-2"
+                style={{ color: colors.text }}
+              >
+                {settingsMounted ? t("recordingStartsIn") : "Recording starts in"}{" "}
+                <span className="text-[#F5C400]">{countdown}</span>{" "}
+                {settingsMounted ? t("seconds") : "seconds"}
+              </h2>
+              <p
+                className="font-['Barlow'] text-lg"
+                style={{ color: colors.textMuted }}
+              >
+                {settingsMounted ? t("getReady") : "Get ready to describe your emergency"}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Header with Recording indicator */}
+      <header
+        className="flex w-full items-center justify-between border-b px-4 py-3"
+        style={{
+          backgroundColor: colors.headerBg,
+          borderColor: "#9D4F15",
+        }}
+      >
         <div className="flex items-center gap-2">
           <span
             className="h-3 w-3 flex-shrink-0 rounded-full bg-[#F5C400] animate-pulse"
             aria-hidden
           />
-          <span className="font-['Barlow_Condensed'] text-lg font-semibold tracking-wide text-[#FFFFFF]">
-            RECORDING
+          <span
+            className="font-['Barlow_Condensed'] text-lg font-semibold tracking-wide"
+            style={{ color: colors.text }}
+          >
+            {settingsMounted ? t("recording") : "RECORDING"}
           </span>
         </div>
-        <span className="font-['Barlow_Condensed'] text-xl tabular-nums text-[#FFFFFF]">
-          {formatTime(recordingElapsed)} / {formatTime(MAX_RECORDING_SECONDS)}
-        </span>
       </header>
+
+      {/* Prominent Timer Display */}
+      <div
+        className="sticky top-0 z-30 py-3 mx-auto max-w-lg px-4"
+        style={{ backgroundColor: colors.bg }}
+      >
+        <div
+          className="rounded-2xl p-4 shadow-lg"
+          style={{
+            backgroundColor: colors.cardBg,
+            borderWidth: "2px",
+            borderStyle: "solid",
+            borderColor: timeRemaining <= 5 ? "#C0392B" : "#F5C400",
+          }}
+        >
+          {/* Progress bar */}
+          <div
+            className="h-2 rounded-full mb-3 overflow-hidden"
+            style={{ backgroundColor: theme === "light" ? "#E5E5E5" : "#3A3A3A" }}
+          >
+            <div
+              className="h-full rounded-full transition-all duration-200"
+              style={{
+                width: `${progressPercent}%`,
+                backgroundColor: timeRemaining <= 5 ? "#C0392B" : "#F5C400",
+              }}
+            />
+          </div>
+          
+          {/* Time display */}
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <div
+                className="w-3 h-3 rounded-full animate-pulse"
+                style={{ backgroundColor: timeRemaining <= 5 ? "#C0392B" : "#F5C400" }}
+              />
+              <span
+                className="font-['Barlow'] text-sm font-medium"
+                style={{ color: colors.textMuted }}
+              >
+                {timeRemaining <= 5 
+                  ? (settingsMounted ? t("timeRunningOut") : "Time running out!")
+                  : (settingsMounted ? t("recordingInProgress") : "Recording...")}
+              </span>
+            </div>
+            <div className="flex items-baseline gap-1">
+              <span
+                className="font-['Barlow_Condensed'] text-3xl font-bold tabular-nums"
+                style={{ color: timeRemaining <= 5 ? "#C0392B" : colors.text }}
+              >
+                {formatTime(timeRemaining)}
+              </span>
+              <span
+                className="font-['Barlow'] text-sm"
+                style={{ color: colors.textDim }}
+              >
+                {settingsMounted ? t("timeLeft") : "left"}
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
 
       <main className="mx-auto max-w-lg px-4 pb-8 pt-4">
         <section
@@ -311,7 +515,9 @@ export default function RecordingPage() {
           {!cameraOn && (
             <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-black text-[#555555]">
               <VideoOff className="h-14 w-14 flex-shrink-0" strokeWidth={2} aria-hidden />
-              <span className="text-lg font-['Barlow']">Camera Off</span>
+              <span className="text-lg font-['Barlow']">
+                {settingsMounted ? t("cameraOff") : "Camera Off"}
+              </span>
             </div>
           )}
         </section>
@@ -323,7 +529,9 @@ export default function RecordingPage() {
           <div className="flex flex-col items-center gap-4">
             <div className="flex flex-col items-center gap-1">
               <Mic className="h-12 w-12 text-white" strokeWidth={2.5} aria-hidden />
-              <span className="text-sm font-['Barlow'] text-[#CCCCCC]">Microphone</span>
+              <span className="text-sm font-['Barlow'] text-[#CCCCCC]">
+                {settingsMounted ? t("microphone") : "Microphone"}
+              </span>
             </div>
             <div className="flex h-14 items-end justify-center gap-0.5">
               {barHeights.map((h, i) => (
@@ -339,12 +547,19 @@ export default function RecordingPage() {
         </section>
 
         <section className="mt-6">
-          <h1 className="font-['Barlow_Condensed'] text-[32px] font-semibold leading-tight text-[#FFFFFF]">
-            Please describe your situation
+          <h1
+            className="font-['Barlow_Condensed'] text-[32px] font-semibold leading-tight"
+            style={{ color: colors.text }}
+          >
+            {settingsMounted ? t("describeTitle") : "Please describe your situation"}
           </h1>
-          <p className="mt-2 font-['Barlow'] text-lg leading-relaxed text-[#CCCCCC]">
-            Speak clearly in your preferred language (max {MAX_RECORDING_SECONDS} seconds). You can
-            also turn on your camera to show your surroundings.
+          <p
+            className="mt-2 font-['Barlow'] text-lg leading-relaxed"
+            style={{ color: colors.textMuted }}
+          >
+            {settingsMounted
+              ? t("describeText", { seconds: MAX_RECORDING_SECONDS })
+              : `Speak clearly in your preferred language (max ${MAX_RECORDING_SECONDS} seconds). You can also turn on your camera to show your surroundings.`}
           </p>
         </section>
 
@@ -353,41 +568,83 @@ export default function RecordingPage() {
             type="button"
             onClick={toggleCamera}
             disabled={sending || hasHitMax}
-            className={`flex min-h-[64px] min-w-[56px] flex-1 items-center justify-center gap-3 rounded-lg border bg-[#2A2A2A] font-['Barlow'] text-lg text-white transition-colors disabled:opacity-50 ${
-              cameraOn ? "border-[#F5C400] text-[#F5C400]" : "border-[#444444]"
-            }`}
+            className="flex min-h-[64px] min-w-[56px] flex-1 items-center justify-center gap-3 rounded-lg font-['Barlow'] text-lg transition-colors disabled:opacity-50"
+            style={{
+              backgroundColor: colors.buttonBg,
+              borderWidth: "1px",
+              borderStyle: "solid",
+              borderColor: cameraOn ? "#F5C400" : colors.buttonBorder,
+              color: cameraOn ? "#F5C400" : colors.text,
+            }}
             aria-label={cameraOn ? "Turn off camera" : "Turn on camera"}
           >
             <Video className="h-7 w-7 flex-shrink-0" strokeWidth={2} aria-hidden />
-            <span>{cameraOn ? "Turn Off Camera" : "Turn On Camera"}</span>
+            <span>
+              {settingsMounted
+                ? (cameraOn ? t("turnOffCamera") : t("turnOnCamera"))
+                : (cameraOn ? "Turn Off Camera" : "Turn On Camera")}
+            </span>
           </button>
-          <button
-            type="button"
-            onClick={handleSend}
-            disabled={sending || hasHitMax}
-            className="flex min-h-[64px] min-w-[56px] flex-1 items-center justify-center gap-3 rounded-lg bg-[#F5C400] font-['Barlow'] text-lg font-bold text-black transition-opacity disabled:opacity-90"
-            aria-label="Complete and send alert"
-          >
-            {sending ? (
-              <>
-                <Loader2 className="h-7 w-7 flex-shrink-0 animate-spin" aria-hidden />
-                <span>Sending...</span>
-              </>
-            ) : hasHitMax ? (
-              <span>Completing...</span>
-            ) : (
-              <span>Complete & Send Alert</span>
-            )}
-          </button>
+          <div className="flex flex-col flex-1 gap-1">
+            <button
+              type="button"
+              onClick={handleSend}
+              disabled={sending || hasHitMax}
+              className="flex min-h-[64px] min-w-[56px] w-full items-center justify-center gap-3 rounded-lg bg-[#F5C400] font-['Barlow'] text-lg font-bold text-black transition-opacity disabled:opacity-90"
+              aria-label="Complete and send alert"
+            >
+              {sending ? (
+                <>
+                  <Loader2 className="h-7 w-7 flex-shrink-0 animate-spin" aria-hidden />
+                  <span>{settingsMounted ? t("sending") : "Sending..."}</span>
+                </>
+              ) : hasHitMax ? (
+                <span>{settingsMounted ? t("completing") : "Completing..."}</span>
+              ) : (
+                <span>{settingsMounted ? t("completeAndSend") : "Complete & Send Alert"}</span>
+              )}
+            </button>
+            {/* Button explanation */}
+            <div
+              className="flex items-start gap-1.5 px-2 py-1 rounded-md"
+              style={{ backgroundColor: theme === "light" ? "rgba(0,0,0,0.05)" : "rgba(255,255,255,0.05)" }}
+            >
+              <Info className="h-3.5 w-3.5 flex-shrink-0 mt-0.5 opacity-60" />
+              <p
+                className="font-['Barlow'] text-xs leading-tight"
+                style={{ color: colors.textDim }}
+              >
+                {settingsMounted
+                  ? t("completeAndSendDesc")
+                  : "Tap to finish recording and immediately send your alert to emergency services"}
+              </p>
+            </div>
+          </div>
         </section>
 
         <section className="mt-6" aria-label="Supported languages">
-          <p className="mb-2 font-['Barlow'] text-base text-[#888888]">We support:</p>
+          <p
+            className="mb-2 font-['Barlow'] text-base"
+            style={{ color: colors.textDim }}
+          >
+            {settingsMounted ? t("weSupport") : "We support:"}
+          </p>
           <div className="flex flex-wrap gap-2">
+<<<<<<< HEAD
             {["English", "Mandarin", "Tamil", "Malay", "Japanese", "Korean"].map((lang) => (
+=======
+            {["English", "Mandarin", "Malay", "Tamil"].map((lang) => (
+>>>>>>> ad0aaa032a4f6881c640fb3c3df65a548995e37d
               <span
                 key={lang}
-                className="rounded-full border border-[#3A3A3A] bg-[#2A2A2A] px-3 py-1.5 font-['Barlow'] text-[#CCCCCC]"
+                className="rounded-full px-3 py-1.5 font-['Barlow']"
+                style={{
+                  backgroundColor: colors.buttonBg,
+                  borderWidth: "1px",
+                  borderStyle: "solid",
+                  borderColor: colors.cardBorder,
+                  color: colors.textMuted,
+                }}
               >
                 {lang}
               </span>
@@ -395,20 +652,26 @@ export default function RecordingPage() {
           </div>
         </section>
 
-        <section className="mt-6 rounded-r-lg border-l-4 border-[#9D4F15] bg-[#111111] px-4 py-3">
-          <p className="font-['Barlow'] text-[17px] leading-relaxed text-[#CCCCCC]">
-            Your safety is our priority. An emergency operator will contact you through your PAB
-            device.
+        <section
+          className="mt-6 rounded-r-lg border-l-4 border-[#9D4F15] px-4 py-3"
+          style={{ backgroundColor: colors.cardBg }}
+        >
+          <p
+            className="font-['Barlow'] text-[17px] leading-relaxed"
+            style={{ color: colors.textMuted }}
+          >
+            {settingsMounted ? t("safetyMessage") : "Your safety is our priority. An emergency operator will contact you through your PAB device."}
           </p>
         </section>
       </main>
 
       {sent && (
         <div
-          className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-[#1A1A1A]/95 px-6"
+          className="fixed inset-0 z-50 flex flex-col items-center justify-center px-6"
           role="dialog"
           aria-modal="true"
           aria-labelledby="success-title"
+          style={{ backgroundColor: theme === "light" ? "rgba(248,245,242,0.97)" : "rgba(26,26,26,0.97)" }}
         >
           <div className="flex max-h-[90vh] flex-col items-center gap-6 overflow-auto">
             <div className="flex h-24 w-24 flex-shrink-0 items-center justify-center rounded-full bg-[#F5C400]">
@@ -417,12 +680,16 @@ export default function RecordingPage() {
             <div className="flex flex-col items-center gap-2 text-center">
               <h2
                 id="success-title"
-                className="font-['Barlow_Condensed'] text-[36px] font-bold text-[#FFFFFF]"
+                className="font-['Barlow_Condensed'] text-[36px] font-bold"
+                style={{ color: colors.text }}
               >
-                Alert Sent
+                {settingsMounted ? t("alertSent") : "Alert Sent"}
               </h2>
-              <p className="font-['Barlow'] text-xl text-[#CCCCCC]">
-                An operator will contact you shortly.
+              <p
+                className="font-['Barlow'] text-xl"
+                style={{ color: colors.textMuted }}
+              >
+                {settingsMounted ? t("operatorContact") : "An operator will contact you shortly."}
               </p>
               <p
                 className={`font-['Barlow'] text-lg font-bold mt-2 px-4 py-2 rounded-lg ${
@@ -436,17 +703,28 @@ export default function RecordingPage() {
                 }`}
                 aria-live="polite"
               >
-                Status: {classification && classification.trim() !== "" ? classification : "No classification found"}
+                {settingsMounted ? t("status") : "Status"}: {classification && classification.trim() !== "" ? classification : (settingsMounted ? t("noClassification") : "No classification found")}
               </p>
             </div>
             {(summaryText || classification) && (
-              <div className="w-full max-w-lg flex flex-col rounded-lg border border-[#3A3A3A] bg-[#111111] px-4 py-3 text-left max-h-[50vh] min-h-[120px] overflow-hidden">
+              <div
+                className="w-full max-w-lg flex flex-col rounded-lg px-4 py-3 text-left max-h-[50vh] min-h-[120px] overflow-hidden"
+                style={{
+                  backgroundColor: colors.cardBg,
+                  borderWidth: "1px",
+                  borderStyle: "solid",
+                  borderColor: colors.cardBorder,
+                }}
+              >
                 <p className="mb-2 font-['Barlow'] text-sm font-semibold text-[#F5C400] flex-shrink-0 text-center">
-                  Analysis &amp; summary
+                  {settingsMounted ? t("analysisSummary") : "Analysis & summary"}
                 </p>
                 <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
-                  <p className="font-['Barlow'] text-[15px] leading-relaxed text-[#CCCCCC] whitespace-pre-wrap break-words pr-1">
-                    {summaryText || "No summary available."}
+                  <p
+                    className="font-['Barlow'] text-[15px] leading-relaxed whitespace-pre-wrap break-words pr-1"
+                    style={{ color: colors.textMuted }}
+                  >
+                    {summaryText || (settingsMounted ? t("noSummary") : "No summary available.")}
                   </p>
                 </div>
               </div>
