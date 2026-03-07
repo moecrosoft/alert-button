@@ -64,5 +64,6 @@ export async function classifyUrgency(userTextPromise = "", imageDescPromise = "
     Label:`,
   });
 
+  // The response is expected to be a string either "Urgent" or "Not Urgent".
   return response.output_text.trim();
 }
