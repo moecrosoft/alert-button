@@ -7,9 +7,9 @@ import { AlertTriangle, Mic, Video, Check, ShieldCheck, FileText } from "lucide-
 
 // Step 3 message by urgency: urgent | not-urgent | uncertain | 
 function getStep3Message(urgency, mounted, t) {
-  if (urgency === "urgent") return "dispatch ambulance";
-  if (urgency === "not-urgent") return "I see. good luck";
-  if (urgency === "uncertain") return "let me get back to you";
+  if (urgency === "urgent") return "Dispatching ambulance to location";
+  if (urgency === "not-urgent") return "Someone will attend to you shortly";
+  if (urgency === "uncertain") return "Let me get back to you";
   return mounted ? t("step3Desc") : "An operator will call you back immediately.";
 }
 
