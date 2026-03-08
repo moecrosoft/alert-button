@@ -702,11 +702,11 @@ export default function RecordingPage() {
               >
                 {classification && classification.trim() !== ""
                   ? (classification.toLowerCase() === "urgent"
-                      ? "dispatch ambulance"
+                      ? "Dispatching ambulance to location"
                       : classification.toLowerCase() === "not urgent"
-                        ? "I see. good luck"
+                        ? "We will get back to you"
                         : classification.toLowerCase() === "uncertain"
-                          ? "let me get back to you"
+                          ? "Someone will get back to you"
                           : (settingsMounted ? t("operatorContact") : "An operator will contact you shortly."))
                   : (settingsMounted ? t("operatorContact") : "An operator will contact you shortly.")}
               </p>
