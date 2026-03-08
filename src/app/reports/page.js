@@ -30,10 +30,11 @@ export default function ReportsPage() {
   const { reports, loading: reportsLoading, fetchReports, updateReport, deleteReport } = useReports();
   const { user, isAdmin, loading: authLoading, signOut } = useAuth();
 
-  // Load reports whenever the reports page is reached (direct URL or navigation)
+  // Fetch reports once when this page is opened (not on app load, so home page doesn't re-render/refresh)
   useEffect(() => {
     fetchReports();
-  }, [fetchReports]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- run only on mount
+  }, []);
 
   const [filter, setFilter] = useState("all");
   const [editingReport, setEditingReport] = useState(null);
@@ -92,15 +93,22 @@ export default function ReportsPage() {
     return null;
   }
 
-  // Normalize classification for display (API may have saved "Not Urgent" historically)
-  const norm = (c) => (c === "Not Urgent" ? "Non-Urgent" : c);
+  // Normalize classification for display and filter (DB may have "Not Urgent", "not urgent", etc.)
+  const norm = (c) => {
+    if (!c || typeof c !== "string") return c;
+    const lower = c.trim().toLowerCase();
+    if (lower === "not urgent" || lower === "non-urgent") return "Non-Urgent";
+    if (lower === "urgent") return "Urgent";
+    if (lower === "false alarm" || lower === "uncertain") return "False Alarm";
+    return c;
+  };
 
   // Filter reports
   const filteredReports = reports.filter((report) => {
     const classification = norm(report.classification);
     if (filter === "all") return true;
     if (filter === "urgent") return classification === "Urgent";
-    if (filter === "non-urgent") return classification === "Non-Urgent";
+    if (filter === "non-urgent") return classification === "Not Urgent";
     if (filter === "false-alarm") return classification === "False Alarm";
     return true;
   });
@@ -112,9 +120,11 @@ export default function ReportsPage() {
     resolved: reports.filter((r) => r.status === "Resolved" || r.status === "Closed").length,
   };
 
-  // Format date
+  // Format date (guards against missing/invalid dateString)
   const formatDate = (dateString) => {
+    if (dateString == null) return "—";
     const date = new Date(dateString);
+    if (Number.isNaN(date.getTime())) return "—";
     const now = new Date();
     const diffMs = now - date;
     const diffMins = Math.floor(diffMs / 60000);
@@ -346,9 +356,19 @@ export default function ReportsPage() {
               <div className="flex h-20 w-20 items-center justify-center rounded-full mb-4" style={{ backgroundColor: "rgba(100, 100, 100, 0.1)" }}>
                 <FileText className="h-10 w-10" style={{ color: colors.textDim }} />
               </div>
-              <h3 className="font-['Barlow_Condensed'] text-xl font-semibold mb-2">{mounted ? t("noReports") : "No reports yet"}</h3>
+              <h3 className="font-['Barlow_Condensed'] text-xl font-semibold mb-2">
+                {filter !== "all" && reports.length > 0
+                  ? (filter === "non-urgent"
+                    ? (mounted ? t("noNonUrgentReports") : "No non-urgent reports")
+                    : filter === "urgent"
+                      ? (mounted ? t("noUrgentReports") : "No urgent reports")
+                      : (mounted ? t("noFalseAlarmReports") : "No false alarm reports"))
+                  : (mounted ? t("noReports") : "No reports yet")}
+              </h3>
               <p className="font-['Barlow'] text-sm text-center" style={{ color: colors.textMuted }}>
-                {mounted ? t("noReportsDesc") : "Emergency alerts will appear here after they are sent."}
+                {filter !== "all" && reports.length > 0
+                  ? (mounted ? t("noReportsInCategoryDesc") : "Try another filter or send an alert to see reports here.")
+                  : (mounted ? t("noReportsDesc") : "Emergency alerts will appear here after they are sent.")}
               </p>
             </div>
           ) : (

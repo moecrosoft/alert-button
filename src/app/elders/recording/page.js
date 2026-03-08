@@ -67,10 +67,15 @@ export default function RecordingPage() {
     setMounted(true);
   }, []);
 
-  // Countdown timer before recording starts
+  // Countdown timer before recording starts (always use COUNTDOWN_SECONDS, e.g. 3)
   useEffect(() => {
     if (!mounted || !showCountdown) return;
-    
+
+    if (countdown > COUNTDOWN_SECONDS) {
+      setCountdown(COUNTDOWN_SECONDS);
+      return;
+    }
+
     if (countdown <= 0) {
       setShowCountdown(false);
       recordingStartRef.current = Date.now();
@@ -79,7 +84,7 @@ export default function RecordingPage() {
     }
 
     const timer = setTimeout(() => {
-      setCountdown(c => c - 1);
+      setCountdown((c) => c - 1);
     }, 1000);
 
     return () => clearTimeout(timer);

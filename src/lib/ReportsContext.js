@@ -5,31 +5,53 @@ import { supabase } from "./supabase";
 
 const ReportsContext = createContext(null);
 
+/** Normalize classification so filter "Non-Urgent" matches DB values like "Not Urgent", "non-urgent", etc. */
+function normalizeClassification(c) {
+  if (c == null || typeof c !== "string") return c ?? "";
+  const lower = String(c).trim().toLowerCase();
+  if (lower === "not urgent" || lower === "non-urgent") return "Non-Urgent";
+  if (lower === "urgent") return "Urgent";
+  if (lower === "false alarm" || lower === "uncertain") return "False Alarm";
+  return c;
+}
+
 export function ReportsProvider({ children }) {
   const [reports, setReports] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  // Fetch reports from Supabase on mount
-  useEffect(() => {
-    fetchReports();
-  }, []);
+  const fetchReports = useCallback(async () => {
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+    if (!url || !key) {
+      console.warn(
+        "Reports: Supabase env missing. Set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY."
+      );
+      setReports([]);
+      setLoading(false);
+      return;
+    }
 
-  const fetchReports = async () => {
     setLoading(true);
+    const loadingGuard = setTimeout(() => setLoading(false), 15000);
+
     try {
       const { data, error } = await supabase
         .from("reports")
         .select("*")
         .order("created_at", { ascending: false });
 
-      if (error) throw error;
-      
-      // Map database fields to frontend format
+      if (error) {
+        console.error("Reports fetch error:", error.message, error.code, error.details);
+        throw error;
+      }
+
+      const rawClassification = (r) =>
+        r.classification ?? r.Classification ?? r.report_classification ?? "";
       const mappedData = (data || []).map((report) => ({
         id: report.id,
         date: report.created_at,
         title: report.title,
-        classification: report.classification,
+        classification: normalizeClassification(rawClassification(report)),
         confidence: report.confidence,
         summary: report.summary,
         status: report.status,
@@ -37,16 +59,23 @@ export function ReportsProvider({ children }) {
         transcript: report.transcript,
         videoAnalysis: report.video_analysis,
       }));
-      
+
       setReports(mappedData);
     } catch (error) {
-      console.error("Error fetching reports:", error);
+      console.error(
+        "Error fetching reports:",
+        error?.message ?? error,
+        error?.code ? `(code: ${error.code})` : "",
+        error?.details ?? ""
+      );
       setReports([]);
     } finally {
+      clearTimeout(loadingGuard);
       setLoading(false);
     }
-  };
+  }, []);
 
+  // Do NOT fetch on mount — only when user opens /reports (avoids home page "refresh" when fetch completes)
   const addReport = useCallback(async (report) => {
     try {
       const newReport = {
@@ -70,7 +99,7 @@ export function ReportsProvider({ children }) {
         id: data.id,
         date: data.created_at,
         title: data.title,
-        classification: data.classification,
+        classification: normalizeClassification(data.classification ?? data.Classification ?? ""),
         confidence: data.confidence,
         summary: data.summary,
         status: data.status,
@@ -111,7 +140,7 @@ export function ReportsProvider({ children }) {
             ? {
                 ...report,
                 title: data.title,
-                classification: data.classification,
+                classification: normalizeClassification(data.classification ?? data.Classification ?? ""),
                 confidence: data.confidence,
                 summary: data.summary,
                 status: data.status,
