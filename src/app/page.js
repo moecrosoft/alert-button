@@ -4,6 +4,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useState, useEffect, useCallback } from "react";
 import { useSettings } from "@/lib/SettingsContext";
 import { AlertTriangle, Mic, Video, Check, ShieldCheck, FileText } from "lucide-react";
+import { Suspense } from 'react';
 
 // Step 3 message by urgency: urgent | not-urgent | uncertain | 
 function getStep3Message(urgency, mounted, t) {
@@ -59,6 +60,7 @@ export default function Home() {
   };
 
   return (
+    <Suspense>
     <div
       className="min-h-screen transition-colors duration-300"
       style={{ backgroundColor: colors.bg, color: colors.text }}
@@ -408,5 +410,6 @@ export default function Home() {
         </section>
       </main>
     </div>
+    </Suspense>
   );
 }
