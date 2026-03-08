@@ -97,9 +97,9 @@ export default function ReportsPage() {
   const norm = (c) => {
     if (!c || typeof c !== "string") return c;
     const lower = c.trim().toLowerCase();
-    if (lower === "not urgent" || lower === "non-urgent") return "Non-Urgent";
+    if (lower === "not urgent" || lower === "non-urgent") return "Not Urgent";
     if (lower === "urgent") return "Urgent";
-    if (lower === "false alarm" || lower === "uncertain") return "False Alarm";
+    if (lower === "false alarm" || lower === "uncertain") return "Uncertain";
     return c;
   };
 
@@ -109,7 +109,7 @@ export default function ReportsPage() {
     if (filter === "all") return true;
     if (filter === "urgent") return classification === "Urgent";
     if (filter === "non-urgent") return classification === "Not Urgent";
-    if (filter === "false-alarm") return classification === "False Alarm";
+    if (filter === "Uncertain") return classification === "Uncertain";
     return true;
   });
 
@@ -145,7 +145,7 @@ export default function ReportsPage() {
         return { bg: "rgba(192, 57, 43, 0.15)", color: "#E74C3C", border: "rgba(192, 57, 43, 0.3)" };
       case "Non-Urgent":
         return { bg: "rgba(245, 196, 0, 0.15)", color: "#F5C400", border: "rgba(245, 196, 0, 0.3)" };
-      case "False Alarm":
+      case "Uncertain":
         return { bg: "rgba(100, 100, 100, 0.15)", color: "#888888", border: "rgba(100, 100, 100, 0.3)" };
       default:
         return { bg: "rgba(100, 100, 100, 0.15)", color: "#888888", border: "rgba(100, 100, 100, 0.3)" };
@@ -325,7 +325,7 @@ export default function ReportsPage() {
               { key: "all", label: "All" },
               { key: "urgent", label: mounted ? t("urgent") : "Urgent" },
               { key: "non-urgent", label: mounted ? t("nonUrgent") : "Non-Urgent" },
-              { key: "false-alarm", label: mounted ? t("falseAlarm") : "False Alarm" },
+              { key: "Uncertain", label: mounted ? t("Uncertain") : "Uncertain" },
             ].map((tab) => (
               <button
                 key={tab.key}
@@ -440,7 +440,7 @@ export default function ReportsPage() {
                             >
                               <option value="Urgent">Urgent</option>
                               <option value="Non-Urgent">Non-Urgent</option>
-                              <option value="False Alarm">False Alarm</option>
+                              <option value="Uncertain">Uncertain</option>
                             </select>
                           ) : (
                             <span
