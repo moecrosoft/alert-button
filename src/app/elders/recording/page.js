@@ -700,7 +700,15 @@ export default function RecordingPage() {
                 className="font-['Barlow'] text-xl"
                 style={{ color: colors.textMuted }}
               >
-                {settingsMounted ? t("operatorContact") : "An operator will contact you shortly."}
+                {classification && classification.trim() !== ""
+                  ? (classification.toLowerCase() === "urgent"
+                      ? "dispatch ambulance"
+                      : classification.toLowerCase() === "not urgent"
+                        ? "I see. good luck"
+                        : classification.toLowerCase() === "uncertain"
+                          ? "let me get back to you"
+                          : (settingsMounted ? t("operatorContact") : "An operator will contact you shortly."))
+                  : (settingsMounted ? t("operatorContact") : "An operator will contact you shortly.")}
               </p>
               <p
                 className={`font-['Barlow'] text-lg font-bold mt-2 px-4 py-2 rounded-lg ${
@@ -742,7 +750,18 @@ export default function RecordingPage() {
             )}
             <button
               type="button"
-              onClick={() => router.push("/")}
+              onClick={() => {
+                const u = classification && classification.trim() !== ""
+                  ? (classification.toLowerCase() === "urgent"
+                      ? "urgent"
+                      : classification.toLowerCase() === "not urgent"
+                        ? "not-urgent"
+                        : classification.toLowerCase() === "uncertain"
+                          ? "uncertain"
+                          : null)
+                  : null;
+                router.push(u ? `/?urgency=${u}` : "/");
+              }}
               className="inline-flex items-center justify-center gap-2 rounded-xl px-6 py-3 font-['Barlow'] text-base font-semibold transition-opacity hover:opacity-90"
               style={{
                 backgroundColor: colors.buttonBg ?? "#F5C400",

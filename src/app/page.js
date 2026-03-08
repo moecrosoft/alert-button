@@ -1,15 +1,26 @@
 "use client";
 
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useState, useEffect, useCallback } from "react";
 import { useSettings } from "@/lib/SettingsContext";
 import { AlertTriangle, Mic, Video, Check, ShieldCheck, FileText } from "lucide-react";
 
+// Step 3 message by urgency: urgent | not-urgent | uncertain | 
+function getStep3Message(urgency, mounted, t) {
+  if (urgency === "urgent") return "dispatch ambulance";
+  if (urgency === "not-urgent") return "I see. good luck";
+  if (urgency === "uncertain") return "let me get back to you";
+  return mounted ? t("step3Desc") : "An operator will call you back immediately.";
+}
+
 export default function Home() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { t, theme, mounted } = useSettings();
+  const urgency = searchParams.get("urgency"); 
+  const step3Message = getStep3Message(urgency, mounted, t);
   
-  const [micPermission, setMicPermission] = useState("prompt"); // "prompt" | "granted" | "denied"
+  const [micPermission, setMicPermission] = useState("prompt"); 
   const [cameraPermission, setCameraPermission] = useState("prompt");
 
   // Check existing permissions on mount (microphone only)
@@ -389,7 +400,7 @@ export default function Home() {
                   className="font-['Barlow'] mt-0.5 text-sm leading-relaxed"
                   style={{ color: colors.textMuted }}
                 >
-                  {mounted ? t("step3Desc") : "An operator will call you back immediately."}
+                  {step3Message}
                 </p>
               </div>
             </li>
